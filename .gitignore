@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# secrets — never commit
+.env
+*.session
+*.session-journal

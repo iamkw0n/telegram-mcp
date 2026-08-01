@@ -1,0 +1,17 @@
+[project]
+name = "telegram-mcp"
+version = "0.1.0"
+description = "Read-only MCP server exposing the user's personal Telegram account (chat folders, channels, messages) as tools for ChatGPT/Claude connectors."
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp>=2.10",
+    "telethon>=1.36",
+    "python-dotenv>=1.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
