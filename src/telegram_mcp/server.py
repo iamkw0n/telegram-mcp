@@ -28,14 +28,18 @@ from telethon.tl.types import (
 from . import config
 from .telegram_client import get_client
 
-auth = StaticTokenVerifier(
-    tokens={
-        config.MCP_AUTH_TOKEN: {
-            "client_id": "telegram-mcp-owner",
-            "scopes": ["telegram:read"],
-        }
-    },
-    required_scopes=["telegram:read"],
+auth = (
+    StaticTokenVerifier(
+        tokens={
+            config.MCP_AUTH_TOKEN: {
+                "client_id": "telegram-mcp-owner",
+                "scopes": ["telegram:read"],
+            }
+        },
+        required_scopes=["telegram:read"],
+    )
+    if config.MCP_AUTH_TOKEN
+    else None
 )
 
 mcp = FastMCP(
