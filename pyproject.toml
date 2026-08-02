@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Read-only MCP server exposing the user's personal Telegram account (chat folders, channels, messages) as tools for ChatGPT/Claude connectors."
 requires-python = ">=3.11"
 dependencies = [
-    "fastmcp>=2.10",
+    "fastmcp>=3.4",
     "telethon>=1.36",
     "python-dotenv>=1.0",
 ]

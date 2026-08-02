@@ -30,14 +30,7 @@ pip install -e .
 cp .env.example .env
 ```
 
-`.env` 에 `TG_API_ID`, `TG_API_HASH` 를 채워 넣습니다.
-
-`MCP_AUTH_TOKEN` 은 선택 사항입니다:
-- **Claude Code CLI 등 커스텀 헤더를 지원하는 클라이언트**로 붙일 계획이면, 아래로 랜덤 토큰을 생성해 넣으세요. 모든 요청에 `Authorization: Bearer <토큰>` 이 필요해집니다.
-  ```bash
-  python -c "import secrets; print(secrets.token_urlsafe(32))"
-  ```
-- **Claude.ai의 "커스텀 커넥터 추가" 화면**은 고정 토큰을 넣는 칸이 없고 OAuth만 지원하므로, 이 값을 비워두면 서버가 인증 없이 동작합니다. 이 경우 접근 제어는 URL 자체의 비공개성(임시 trycloudflare.com URL) 또는 앞단의 Cloudflare Access(아래 5절)에 맡기게 됩니다.
+`.env` 에 `TG_API_ID`, `TG_API_HASH` 를 채워 넣습니다. (인증/`MCP_*` 값은 4단계에서 채웁니다.)
 
 ## 3. 텔레그램 로그인 (최초 1회, 대화형)
 
@@ -51,7 +44,55 @@ python scripts/login.py
 
 **세션 문자열은 비밀번호와 동일한 권한을 가집니다. 절대 커밋하거나 공유하지 마세요.** (`.gitignore`에 `.env`가 이미 포함되어 있습니다.)
 
-## 4. 서버 실행
+## 4. 외부 공개 URL 먼저 확보 (Cloudflare Tunnel)
+
+인증 방식(특히 GitHub OAuth)을 설정하려면 외부에서 접근 가능한 URL이 먼저 필요하므로, 서버를 켜기 전에 터널부터 열어 URL을 확보합니다.
+
+### 지금 당장 테스트용 (임시 URL)
+```bash
+cloudflared tunnel --url http://localhost:8811
+```
+콘솔에 출력되는 `https://xxxx.trycloudflare.com` 을 기록해두세요. (아직 서버가 안 떠 있어서 502가 떠도 정상 — URL만 먼저 확보하는 단계입니다. 프로세스를 끄면 URL도 사라짐 — 테스트/검증용.)
+
+### 나중에: 본인 서버 + 도메인으로 영구 운영
+1. 이 저장소를 실제로 상시 켜둘 서버에 clone.
+2. Cloudflare Zero Trust에서 [Named Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/) 생성 후 본인 도메인의 서브도메인(예: `telegram-mcp.example.com`)을 `http://localhost:8811` 로 라우팅. 이 고정 도메인을 아래 단계들의 URL로 사용하면 됩니다.
+3. 선택: [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/)로 그 서브도메인 자체에도 로그인을 요구하도록 설정하면 이중 방어가 됩니다.
+
+## 5. 인증 설정
+
+`.env`에서 아래 **둘 중 하나**를 선택해 채웁니다 (둘 다 설정하면 GitHub OAuth가 우선됩니다).
+
+### 옵션 A — GitHub OAuth (Claude.ai 커넥터용, 권장)
+
+Claude.ai의 "커스텀 커넥터 추가" 화면은 OAuth만 지원하고 고정 토큰 입력 칸이 없습니다. GitHub 로그인으로 게이트를 걸고, 로그인에 성공해도 **본인 GitHub 계정이 아니면 도구 호출 자체를 거부**하도록 서버에 이미 구현되어 있습니다.
+
+1. https://github.com/settings/developers → **OAuth Apps** → **New OAuth App**
+2. Homepage URL: 4단계에서 받은 터널 URL (예: `https://xxxx.trycloudflare.com`)
+3. Authorization callback URL: 그 URL + `/auth/callback` (예: `https://xxxx.trycloudflare.com/auth/callback`)
+4. 생성 후 **Client ID** 확인, **Generate a new client secret** 로 시크릿 발급
+5. `.env`에 입력:
+   ```
+   PUBLIC_BASE_URL=https://xxxx.trycloudflare.com   # 터널 URL, 끝에 슬래시 없이
+   GITHUB_OAUTH_CLIENT_ID=...
+   GITHUB_OAUTH_CLIENT_SECRET=...
+   GITHUB_ALLOWED_USERNAME=본인의-github-아이디
+   ```
+
+⚠️ 임시 터널(`trycloudflare.com`)은 `cloudflared`를 재시작할 때마다 URL이 바뀝니다. URL이 바뀌면 GitHub OAuth App의 Homepage/Callback URL과 `.env`의 `PUBLIC_BASE_URL`을 다시 맞춰줘야 합니다. 검증하는 동안은 cloudflared를 끄지 말고 계속 켜두세요.
+
+### 옵션 B — 고정 토큰 (Claude Code CLI 등 커스텀 헤더 지원 클라이언트용)
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+결과를 `.env`의 `MCP_AUTH_TOKEN`에 저장. 모든 요청에 `Authorization: Bearer <토큰>` 헤더가 필요해집니다.
+
+### 아무것도 설정하지 않으면
+
+서버가 인증 없이 열립니다. Cloudflare Access 등으로 앞단이 이미 보호되고 있을 때만 사용하세요.
+
+## 6. 서버 실행
 
 ```bash
 source .venv/bin/activate
@@ -59,34 +100,18 @@ set -a; source .env; set +a
 python -m telegram_mcp.server
 ```
 
-기본적으로 `http://0.0.0.0:8811/mcp` 에서 Streamable HTTP MCP 엔드포인트가 열립니다. `MCP_AUTH_TOKEN`을 설정했다면 모든 요청에 `Authorization: Bearer <MCP_AUTH_TOKEN>` 헤더가 필요하고, 비워뒀다면 인증 없이 열려 있습니다.
+`http://0.0.0.0:8811/mcp` 에서 Streamable HTTP MCP 엔드포인트가 열립니다 (4단계에서 이미 열어둔 터널이 그대로 이 포트를 가리키고 있어야 합니다).
 
-## 5. 외부에 공개하기 (Cloudflare Tunnel)
-
-### 지금 당장 테스트용 (임시 URL)
-```bash
-cloudflared tunnel --url http://localhost:8811
-```
-콘솔에 출력되는 `https://xxxx.trycloudflare.com` 이 외부에서 접근 가능한 URL입니다. (프로세스를 끄면 URL도 사라짐 — 테스트/검증용)
-
-### 나중에: 본인 서버 + 도메인으로 영구 운영
-1. 이 저장소를 실제로 상시 켜둘 서버에 clone.
-2. 위 2~4단계(설치, 로그인, 서버 실행)를 그 서버에서 동일하게 수행 (systemd 서비스 등으로 상시 구동 추천).
-3. Cloudflare Zero Trust에서 [Named Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/) 생성 후 본인 도메인의 서브도메인(예: `telegram-mcp.example.com`)을 `http://localhost:8811` 로 라우팅.
-4. **[Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/)로 그 서브도메인에 로그인(본인 이메일 등)을 요구하도록 설정** — 앱이 자체 OAuth 서버를 구현하지 않아도, 터널 앞단에서 본인만 접근하도록 막는 표준적인 방법입니다. (이 경우 `.env`의 `MCP_AUTH_TOKEN`은 비워둬도 되고, 이중 방어로 같이 써도 됩니다 — Claude Code CLI처럼 헤더를 지원하는 클라이언트에서만 유효.)
-5. ChatGPT/Claude 커넥터 URL을 그 영구 도메인으로 교체.
-
-## 6. ChatGPT / Claude에 커넥터로 등록
+## 7. ChatGPT / Claude에 커넥터로 등록
 
 - **URL**: `https://<터널 또는 도메인>/mcp`
-- **인증**:
-  - Claude.ai "커스텀 커넥터 추가" 화면은 OAuth 클라이언트 ID/시크릿만 입력 가능하고 고정 토큰 입력 칸이 없습니다. `MCP_AUTH_TOKEN`을 비워둔 채로 URL만 입력하고 OAuth 필드는 비워두세요.
-  - Claude Code CLI 등 커스텀 헤더 설정이 가능한 클라이언트라면 `MCP_AUTH_TOKEN`을 설정하고 `Authorization: Bearer <토큰>` 헤더로 붙이면 됩니다.
+- GitHub OAuth(옵션 A)를 설정했다면 Claude.ai 쪽 "OAuth 클라이언트 ID/시크릿" 칸은 **비워둔 채** URL만 입력하고 추가하면 됩니다 — Claude가 자동으로 클라이언트를 등록하고 GitHub 로그인 화면으로 안내합니다.
+- 고정 토큰(옵션 B)을 설정했다면, 헤더 설정이 가능한 클라이언트에서 `Authorization: Bearer <토큰>` 으로 붙이세요.
 
 각 서비스의 "커스텀 커넥터/MCP 서버 추가" 설정 화면에서 위 URL을 입력하면 됩니다. (UI 경로는 두 서비스 모두 자주 바뀌므로, 설정 메뉴에서 "Connectors" 또는 "MCP" 항목을 찾으세요.)
 
 ## 보안 주의사항
 
-- `TG_SESSION_STRING`, `MCP_AUTH_TOKEN`, `TG_API_HASH` 는 모두 비밀값입니다. `.env` 밖으로 노출/커밋하지 마세요.
-- `MCP_AUTH_TOKEN` 인증은 정적 토큰 검증(개인 단일 사용자용 간이 방식)이며, Claude.ai 커넥터 UI에서는 애초에 사용할 수 없습니다. 그 경로에서는 URL 비공개성 또는 Cloudflare Access 같은 앞단 게이트에 의존하세요.
-- 이 서버는 읽기 전용이지만, 텔레그램 계정 전체(모든 채팅)를 읽을 수 있는 자격증명을 사용하므로 토큰 유출 시 피해 범위가 큽니다. 터널 URL/토큰을 신뢰할 수 있는 곳에만 사용하세요.
+- `TG_SESSION_STRING`, `TG_API_HASH`, `GITHUB_OAUTH_CLIENT_SECRET`, `MCP_AUTH_TOKEN` 은 모두 비밀값입니다. `.env` 밖으로 노출/커밋하지 마세요.
+- GitHub OAuth 경로는 `GITHUB_ALLOWED_USERNAME`과 일치하는 계정으로 로그인했을 때만 도구 호출이 허용되도록 미들웨어에서 검증합니다 (`src/telegram_mcp/server.py`의 `OwnerOnlyMiddleware`). 다른 GitHub 계정은 로그인은 되어도 도구 호출 시 거부됩니다.
+- 이 서버는 읽기 전용이지만, 텔레그램 계정 전체(모든 채팅)를 읽을 수 있는 자격증명을 사용하므로 유출 시 피해 범위가 큽니다. 터널 URL/토큰/시크릿을 신뢰할 수 있는 곳에만 사용하세요.

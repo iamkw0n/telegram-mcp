@@ -12,7 +12,11 @@ from datetime import datetime
 from typing import Any
 
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
+from fastmcp.server.auth.providers.github import GitHubProvider
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
+from fastmcp.server.dependencies import get_access_token
+from fastmcp.server.middleware import Middleware
 from telethon.tl.functions.messages import GetDialogFiltersRequest
 from telethon.tl.types import (
     Channel,
@@ -28,19 +32,61 @@ from telethon.tl.types import (
 from . import config
 from .telegram_client import get_client
 
-auth = (
-    StaticTokenVerifier(
-        tokens={
-            config.MCP_AUTH_TOKEN: {
-                "client_id": "telegram-mcp-owner",
-                "scopes": ["telegram:read"],
-            }
-        },
-        required_scopes=["telegram:read"],
-    )
-    if config.MCP_AUTH_TOKEN
-    else None
-)
+class OwnerOnlyMiddleware(Middleware):
+    """Rejects tool calls unless the authenticated GitHub login is the owner.
+
+    GitHubProvider only proves *some* GitHub account logged in — anyone with
+    the connector URL could otherwise complete the OAuth flow with their own
+    GitHub account and read the owner's Telegram messages. This closes that
+    gap by checking the verified `login` claim on every tool call.
+    """
+
+    def __init__(self, allowed_login: str):
+        self._allowed_login = allowed_login.lower()
+
+    async def on_call_tool(self, context, call_next):
+        token = get_access_token()
+        login = (token.claims or {}).get("login") if token else None
+        if login is None or login.lower() != self._allowed_login:
+            raise ToolError("Access denied: this connector is restricted to its owner.")
+        return await call_next(context)
+
+
+def _build_auth() -> tuple[Any, list[Middleware]]:
+    """Pick an auth strategy. Priority: GitHub OAuth > static bearer token > none.
+
+    GitHub OAuth is required for the Claude.ai "custom connector" UI, which
+    only supports OAuth (no field for a static bearer token). See README.
+    """
+    if (
+        config.GITHUB_OAUTH_CLIENT_ID
+        and config.GITHUB_OAUTH_CLIENT_SECRET
+        and config.GITHUB_ALLOWED_USERNAME
+        and config.PUBLIC_BASE_URL
+    ):
+        github_auth = GitHubProvider(
+            client_id=config.GITHUB_OAUTH_CLIENT_ID,
+            client_secret=config.GITHUB_OAUTH_CLIENT_SECRET,
+            base_url=config.PUBLIC_BASE_URL,
+        )
+        return github_auth, [OwnerOnlyMiddleware(config.GITHUB_ALLOWED_USERNAME)]
+
+    if config.MCP_AUTH_TOKEN:
+        token_auth = StaticTokenVerifier(
+            tokens={
+                config.MCP_AUTH_TOKEN: {
+                    "client_id": "telegram-mcp-owner",
+                    "scopes": ["telegram:read"],
+                }
+            },
+            required_scopes=["telegram:read"],
+        )
+        return token_auth, []
+
+    return None, []
+
+
+auth, extra_middleware = _build_auth()
 
 mcp = FastMCP(
     name="telegram-mcp",
@@ -50,6 +96,7 @@ mcp = FastMCP(
         "recent messages from a chat or channel."
     ),
     auth=auth,
+    middleware=extra_middleware,
 )
 
 
