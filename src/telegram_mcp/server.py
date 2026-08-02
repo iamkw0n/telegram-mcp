@@ -18,6 +18,7 @@ from fastmcp.server.auth.providers.github import GitHubProvider
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware import Middleware
+from fastmcp.utilities.types import Image
 from telethon.tl.functions.messages import GetDialogFiltersRequest, GetForumTopicsRequest
 from telethon.tl.types import (
     Channel,
@@ -322,6 +323,33 @@ async def list_topics(chat: str) -> list[dict[str, Any]]:
     ]
 
 
+def _message_summary(m: Any) -> dict[str, Any]:
+    date: datetime | None = m.date
+    media_type = None
+    if m.photo:
+        media_type = "photo"
+    elif m.document:
+        media_type = "document"
+    elif m.media:
+        media_type = type(m.media).__name__
+
+    return {
+        "id": m.id,
+        "date": date.isoformat() if date else None,
+        "sender": m.post_author or (str(m.sender_id) if m.sender_id else None),
+        "text": m.message or "",
+        "has_media": m.media is not None,
+        "media_type": media_type,
+    }
+
+
+async def _resolve_topic_id(entity: Any, topic: str | None) -> int | None:
+    if topic is None:
+        return None
+    matched_topic = await _find_topic(entity, topic)
+    return matched_topic.id
+
+
 @mcp.tool
 async def get_recent_messages(
     chat: str, limit: int = 10, topic: str | None = None
@@ -331,30 +359,52 @@ async def get_recent_messages(
     `chat` may be an exact/partial title, an @username, or a numeric id.
     If the chat has forum topics (see list_topics), pass `topic` (its title
     or id) to read messages from that specific topic instead of the whole
-    chat's main/general thread.
+    chat's main/general thread. Each result includes `has_media`/`media_type`
+    — for a photo, pass its `id` to get_message_photo to view it.
+    """
+    client = await get_client()
+    entity = await _resolve_chat(chat)
+    reply_to = await _resolve_topic_id(entity, topic)
+
+    messages = await client.get_messages(entity, limit=limit, reply_to=reply_to)
+    return [_message_summary(m) for m in messages]
+
+
+@mcp.tool
+async def search_messages(
+    chat: str, query: str, topic: str | None = None, limit: int = 20
+) -> list[dict[str, Any]]:
+    """Search a chat for messages containing `query` (server-side Telegram search).
+
+    `chat` may be an exact/partial title, an @username, or a numeric id. If
+    the chat has forum topics (see list_topics), pass `topic` to search only
+    within that topic instead of the whole chat.
+    """
+    client = await get_client()
+    entity = await _resolve_chat(chat)
+    reply_to = await _resolve_topic_id(entity, topic)
+
+    messages = await client.get_messages(entity, search=query, limit=limit, reply_to=reply_to)
+    return [_message_summary(m) for m in messages]
+
+
+@mcp.tool
+async def get_message_photo(chat: str, message_id: int) -> Image:
+    """Download a message's photo so it can be viewed inline.
+
+    Use this after get_recent_messages/search_messages shows a message with
+    media_type "photo", passing that message's `id` as `message_id`.
     """
     client = await get_client()
     entity = await _resolve_chat(chat)
 
-    reply_to = None
-    if topic is not None:
-        matched_topic = await _find_topic(entity, topic)
-        reply_to = matched_topic.id
+    messages = await client.get_messages(entity, ids=message_id)
+    message = messages[0] if isinstance(messages, list) else messages
+    if message is None or not message.photo:
+        raise ValueError(f"Message {message_id} in '{chat}' has no photo.")
 
-    messages = await client.get_messages(entity, limit=limit, reply_to=reply_to)
-
-    result = []
-    for m in messages:
-        date: datetime | None = m.date
-        result.append(
-            {
-                "id": m.id,
-                "date": date.isoformat() if date else None,
-                "sender": m.post_author or (str(m.sender_id) if m.sender_id else None),
-                "text": m.message or "",
-            }
-        )
-    return result
+    data = await client.download_media(message, file=bytes)
+    return Image(data=data, format="jpeg")
 
 
 def main() -> None:
