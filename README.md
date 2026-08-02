@@ -12,7 +12,10 @@
 | `list_chats_in_folder(folder_title)` | 특정 폴더에 포함된 채팅/채널 목록 |
 | `list_dialogs(query?, limit?)` | 전체 대화 목록 조회/검색 (채팅 이름 확인용) |
 | `get_chat_info(chat)` | 특정 채팅의 기본 정보 |
-| `get_recent_messages(chat, limit?)` | 특정 채팅의 최신 메시지 N개 |
+| `list_topics(chat)` | 채팅 내부의 포럼 토픽(주제별 하위방) 목록 |
+| `get_recent_messages(chat, limit?, topic?)` | 특정 채팅(또는 토픽)의 최신 메시지 N개 |
+
+일부 슈퍼그룹은 "포럼 토픽" 기능으로 하나의 방 안에 "차트 스쿨", "공지방" 같은 하위 주제방이 나뉘어 있습니다. 이런 하위 주제방은 별도의 대화(dialog)가 아니라서 `list_dialogs`/`list_chats_in_folder`에는 안 보입니다 — `list_topics`로 먼저 목록을 확인하고, `get_recent_messages`의 `topic` 인자로 주제명을 넘겨서 읽으세요.
 
 메시지 발송 등 쓰기 기능은 의도적으로 구현하지 않았습니다.
 

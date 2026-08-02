@@ -1,9 +1,10 @@
 """Read-only MCP server exposing the user's personal Telegram account.
 
 Tools let an MCP client (ChatGPT, Claude, ...) browse Telegram "chat folders",
-list the chats/channels inside a folder, search all dialogs, and read the
-most recent messages of a chat. Nothing here can send messages or otherwise
-mutate the account — the scope is intentionally read-only.
+list the chats/channels inside a folder, search all dialogs, list forum
+topics inside a chat, and read the most recent messages of a chat or a
+specific topic. Nothing here can send messages or otherwise mutate the
+account — the scope is intentionally read-only.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from fastmcp.server.auth.providers.github import GitHubProvider
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware import Middleware
-from telethon.tl.functions.messages import GetDialogFiltersRequest
+from telethon.tl.functions.messages import GetDialogFiltersRequest, GetForumTopicsRequest
 from telethon.tl.types import (
     Channel,
     Chat,
@@ -92,8 +93,9 @@ mcp = FastMCP(
     name="telegram-mcp",
     instructions=(
         "Read-only access to the connected Telegram account: list chat "
-        "folders, list chats inside a folder, search dialogs, and read "
-        "recent messages from a chat or channel."
+        "folders, list chats inside a folder, search dialogs, list forum "
+        "topics inside a chat, and read recent messages from a chat or a "
+        "specific topic within it."
     ),
     auth=auth,
     middleware=extra_middleware,
@@ -192,6 +194,40 @@ async def _resolve_chat(chat: str) -> Any:
     raise ValueError(f"No chat found matching '{chat}'.")
 
 
+async def _list_forum_topics(entity: Any) -> list[Any]:
+    client = await get_client()
+    result = await client(
+        GetForumTopicsRequest(
+            peer=entity,
+            offset_date=None,
+            offset_id=0,
+            offset_topic=0,
+            limit=100,
+        )
+    )
+    return result.topics
+
+
+async def _find_topic(entity: Any, topic: str) -> Any:
+    topics = await _list_forum_topics(entity)
+    needle = topic.strip().lower()
+
+    if topic.isdigit():
+        for t in topics:
+            if t.id == int(topic):
+                return t
+
+    for t in topics:
+        if t.title.strip().lower() == needle:
+            return t
+    for t in topics:
+        if needle in t.title.strip().lower():
+            return t
+
+    available = ", ".join(t.title for t in topics)
+    raise ValueError(f"No topic matching '{topic}' found. Available topics: {available}")
+
+
 @mcp.tool
 async def list_chat_folders() -> list[dict[str, Any]]:
     """List the user's Telegram chat folders (title, id, number of chats included)."""
@@ -261,15 +297,51 @@ async def get_chat_info(chat: str) -> dict[str, Any]:
 
 
 @mcp.tool
-async def get_recent_messages(chat: str, limit: int = 10) -> list[dict[str, Any]]:
+async def list_topics(chat: str) -> list[dict[str, Any]]:
+    """List forum topics inside a chat, if it has Telegram's "topics" feature enabled.
+
+    Some supergroups split discussion into named topics (e.g. a room might
+    contain topics like "차트 스쿨", "공지방", etc.) — those are NOT separate
+    dialogs/chats, so list_chats_in_folder/list_dialogs won't show them. Use
+    this tool to discover them, then pass the topic title to
+    get_recent_messages. Returns an empty list if the chat has no topics.
+    """
+    entity = await _resolve_chat(chat)
+    if not getattr(entity, "forum", False):
+        return []
+
+    topics = await _list_forum_topics(entity)
+    return [
+        {
+            "id": t.id,
+            "title": t.title,
+            "closed": bool(t.closed),
+            "pinned": bool(t.pinned),
+        }
+        for t in topics
+    ]
+
+
+@mcp.tool
+async def get_recent_messages(
+    chat: str, limit: int = 10, topic: str | None = None
+) -> list[dict[str, Any]]:
     """Read the most recent messages from a chat/channel (newest first).
 
     `chat` may be an exact/partial title, an @username, or a numeric id.
+    If the chat has forum topics (see list_topics), pass `topic` (its title
+    or id) to read messages from that specific topic instead of the whole
+    chat's main/general thread.
     """
     client = await get_client()
     entity = await _resolve_chat(chat)
 
-    messages = await client.get_messages(entity, limit=limit)
+    reply_to = None
+    if topic is not None:
+        matched_topic = await _find_topic(entity, topic)
+        reply_to = matched_topic.id
+
+    messages = await client.get_messages(entity, limit=limit, reply_to=reply_to)
 
     result = []
     for m in messages:
