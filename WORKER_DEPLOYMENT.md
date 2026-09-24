@@ -10,23 +10,20 @@ The Worker route is limited to this path and its children. The Worker itself acc
 
 ## Authentication
 
-Create a Cloudflare Access **self-hosted application** protecting `verdian.io.kr/mcp/telegram`. Add a policy allowing only the owner's identity, enable **Managed OAuth**, and use a short access-token lifetime. The Worker independently verifies the `Cf-Access-Jwt-Assertion` signature, issuer, application audience, expiry, and owner email.
+The Worker requires an `Authorization: Bearer <token>` header on every MCP request. It rejects requests when `MCP_AUTH_TOKEN` is missing, too short, or incorrect. No Cloudflare Access application is required.
 
-Set these non-secret Worker variables:
-
-- `CF_ACCESS_TEAM_DOMAIN`: the Zero Trust team domain, including `https://`, such as `https://team.cloudflareaccess.com`
-- `CF_ACCESS_AUD`: the Access application audience tag
-- `ALLOWED_EMAIL`: the owner's login email address
+Generate a random token locally and store it as the encrypted Worker secret `MCP_AUTH_TOKEN`. Keep the same value in a private, ignored local file for MCP client setup. Do not put it in `wrangler.jsonc`, source code, GitHub, or logs. Clients must support a custom Authorization header; clients that only support an interactive OAuth connection cannot use this endpoint as configured.
 
 Set these Worker secrets from the existing local `.env` without committing or printing their values:
 
 - `TG_API_ID`
 - `TG_API_HASH`
 - `TG_SESSION_STRING`
+- `MCP_AUTH_TOKEN`
 
 The `TG_SESSION_STRING` grants access to the Telegram account. The Worker has no message-sending tools, but anyone holding that string can use it independently. Never put it in source, GitHub Actions logs, or Wrangler config.
 
-`keep_vars` is enabled in `wrangler.jsonc` so GitHub-triggered deployments preserve the three non-secret variables managed in the Cloudflare dashboard. Encrypted secrets are preserved by Wrangler deployments.
+`keep_vars` is disabled in `wrangler.jsonc` so deployments remove obsolete plain-text variables, including the former Access settings. Encrypted secrets are preserved by Wrangler deployments.
 
 Disable the `workers.dev` route. The checked-in Wrangler config already requests this. The Worker also rejects any host other than `verdian.io.kr`.
 
@@ -39,7 +36,7 @@ npm run check
 npm run deploy
 ```
 
-Confirm the Cloudflare deployment, the Access policy, and a real MCP `tools/list` and read-only Telegram tool call at the custom URL. An HTTP status alone does not verify Telegram connectivity or MCP behavior.
+Confirm the Cloudflare deployment, unauthenticated rejection, and a real authenticated MCP `tools/list` and read-only Telegram tool call at the custom URL. An HTTP status alone does not verify Telegram connectivity or MCP behavior.
 
 Telegram's API cannot combine message search with a forum topic reply filter. Topic search filters only that topic's latest 100 messages. Dialog title matching checks at most 500 dialogs per call.
 

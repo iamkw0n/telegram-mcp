@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
-import { verifyAccess } from "./access.js";
+import { verifyBearerToken } from "./auth.js";
 import {
   getChatInfo,
   getMessagePhoto,
@@ -100,8 +100,11 @@ export default {
     const url = new URL(request.url);
     if (url.pathname !== MCP_PATH) return new Response("Not found", { status: 404 });
     if (url.hostname !== "verdian.io.kr") return new Response("Not found", { status: 404 });
-    if (!(await verifyAccess(request, env))) {
-      return new Response("Unauthorized", { status: 401, headers: { "Cache-Control": "no-store" } });
+    if (!(await verifyBearerToken(request, env))) {
+      return new Response("Unauthorized", {
+        status: 401,
+        headers: { "Cache-Control": "no-store", "WWW-Authenticate": 'Bearer realm="Telegram MCP"' },
+      });
     }
     return createMcpHandler(() => createServer(env), {
       route: MCP_PATH,

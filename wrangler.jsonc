@@ -4,7 +4,7 @@
   "main": "worker/index.js",
   "compatibility_date": "2026-09-24",
   "compatibility_flags": ["nodejs_compat"],
-  "keep_vars": true,
+  "keep_vars": false,
   "workers_dev": false,
   "routes": [
     { "pattern": "verdian.io.kr/mcp/telegram*", "zone_name": "verdian.io.kr" }

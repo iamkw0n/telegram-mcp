@@ -1,5 +1,7 @@
 # telegram-mcp
 
+Cloudflare Workers 배포 및 `https://verdian.io.kr/mcp/telegram` 토큰 인증 설정은 [WORKER_DEPLOYMENT.md](WORKER_DEPLOYMENT.md)를 참고하세요. 아래 터널과 GitHub OAuth 안내는 로컬 Python 서버용입니다.
+
 내 텔레그램(개인 계정)의 채팅 폴더, 채널/그룹 목록, 최근 메시지를 **읽기 전용**으로 노출하는 원격 MCP 서버입니다. ChatGPT와 Claude에 "커스텀 커넥터"로 등록해서 사용합니다.
 
 봇 API가 아니라 **텔레그램 사용자 계정으로 로그인**(MTProto, [Telethon](https://docs.telethon.dev/))하기 때문에, 봇을 초대하지 않은 채널이나 "채팅 폴더" 같은 개인 계정 전용 기능도 볼 수 있습니다. 대신 세션 문자열이 계정 전체에 대한 접근 권한과 동일하므로 보안에 각별히 주의하세요.
