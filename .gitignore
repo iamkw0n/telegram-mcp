@@ -8,3 +8,6 @@ venv/
 .env
 *.session
 *.session-journal
+node_modules/
+.wrangler/
+worker-configuration.d.ts

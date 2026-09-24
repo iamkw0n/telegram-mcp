@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "verdian-telegram-mcp",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-09-24",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "routes": [
+    { "pattern": "verdian.io.kr/mcp/telegram*", "zone_name": "verdian.io.kr" }
+  ],
+  "observability": { "enabled": true, "head_sampling_rate": 1 }
+}
