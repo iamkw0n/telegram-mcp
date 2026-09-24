@@ -46,7 +46,10 @@ test("owner token and same-site CSRF are required before an OAuth grant", async 
     }), state);
   }
 
-  assert.equal((await submit(ownerToken, "")).status, 403);
+  const expired = await submit(ownerToken, "");
+  assert.equal(expired.status, 200);
+  assert.match(await expired.text(), /승인 페이지가 만료되었습니다/);
+  assert.match(expired.headers.get("Set-Cookie"), /Max-Age=1800/);
   assert.equal(state.approved, 0);
   assert.equal((await submit("wrong", `__Host-telegram-csrf=${csrf}`)).status, 200);
   assert.equal(state.approved, 0);

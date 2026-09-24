@@ -32,7 +32,7 @@ function response(html, csrf) {
       "Referrer-Policy": "no-referrer",
       "X-Content-Type-Options": "nosniff",
       "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
-      "Set-Cookie": `__Host-telegram-csrf=${csrf}; Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age=600`,
+      "Set-Cookie": `__Host-telegram-csrf=${csrf}; Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age=1800`,
     },
   });
 }
@@ -80,7 +80,10 @@ export const authHandler = {
     }
     const form = await request.formData();
     const csrf = cookie(request, "__Host-telegram-csrf");
-    if (!csrf || form.get("csrf") !== csrf) return new Response("Invalid form", { status: 403 });
+    if (!csrf || form.get("csrf") !== csrf) {
+      const nextCsrf = randomToken();
+      return response(page(clientName, nextCsrf, "승인 페이지가 만료되었습니다. 토큰을 다시 입력해 주세요."), nextCsrf);
+    }
     const token = form.get("owner_token");
     const tokenRequest = new Request(RESOURCE, { headers: { Authorization: `Bearer ${typeof token === "string" ? token : ""}` } });
     if (!(await verifyBearerToken(tokenRequest, env))) {
