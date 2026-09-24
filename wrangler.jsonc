@@ -3,11 +3,16 @@
   "name": "verdian-telegram-mcp",
   "main": "worker/index.js",
   "compatibility_date": "2026-09-24",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "keep_vars": false,
   "workers_dev": false,
+  "kv_namespaces": [
+    { "binding": "OAUTH_KV", "id": "c88f015bda84408692e260f9cb3955e1" }
+  ],
   "routes": [
-    { "pattern": "verdian.io.kr/mcp/telegram*", "zone_name": "verdian.io.kr" }
+    { "pattern": "verdian.io.kr/mcp/telegram*", "zone_name": "verdian.io.kr" },
+    { "pattern": "verdian.io.kr/oauth/telegram*", "zone_name": "verdian.io.kr" },
+    { "pattern": "verdian.io.kr/.well-known/oauth-*", "zone_name": "verdian.io.kr" }
   ],
   "observability": { "enabled": true, "head_sampling_rate": 1 }
 }

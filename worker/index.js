@@ -1,7 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
+import { OAuthProvider } from "@cloudflare/workers-oauth-provider";
 import { verifyBearerToken } from "./auth.js";
+import { authHandler, AUTHORIZE_PATH, RESOURCE, SCOPE } from "./oauth.js";
 import {
   getChatInfo,
   getMessagePhoto,
@@ -95,23 +97,51 @@ function createServer(env) {
   return server;
 }
 
-export default {
-  async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    if (url.pathname !== MCP_PATH) return new Response("Not found", { status: 404 });
-    if (url.hostname !== "verdian.io.kr") return new Response("Not found", { status: 404 });
-    if (!(await verifyBearerToken(request, env))) {
-      return new Response("Unauthorized", {
-        status: 401,
-        headers: { "Cache-Control": "no-store", "WWW-Authenticate": 'Bearer realm="Telegram MCP"' },
-      });
-    }
-    return createMcpHandler(() => createServer(env), {
+function handleMcp(request, env, ctx) {
+  return createMcpHandler(() => createServer(env), {
       route: MCP_PATH,
       responseMode: "json",
       allowedHostnames: ["verdian.io.kr"],
       allowedOriginHostnames: ["verdian.io.kr", "chatgpt.com", "claude.ai"],
       corsOptions: false,
-    })(request, env, ctx);
+  })(request, env, ctx);
+}
+
+const oauthProvider = new OAuthProvider({
+  apiRoute: MCP_PATH,
+  apiHandler: {
+    fetch(request, env, ctx) {
+      if (ctx.props?.userId !== "telegram-owner" || !ctx.auth?.scope?.includes(SCOPE)) {
+        return new Response("Forbidden", { status: 403, headers: { "Cache-Control": "no-store" } });
+      }
+      return handleMcp(request, env, ctx);
+    },
+  },
+  defaultHandler: authHandler,
+  authorizeEndpoint: AUTHORIZE_PATH,
+  tokenEndpoint: "/oauth/telegram/token",
+  clientRegistrationEndpoint: "/oauth/telegram/register",
+  scopesSupported: [SCOPE],
+  resourceMetadata: {
+    resource: RESOURCE,
+    authorization_servers: ["https://verdian.io.kr"],
+    scopes_supported: [SCOPE],
+    resource_name: "Verdian Telegram MCP",
+  },
+  clientIdMetadataDocumentEnabled: true,
+  accessTokenTTL: 3600,
+  refreshTokenTTL: 2592000,
+});
+
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    if (url.hostname !== "verdian.io.kr" || url.protocol !== "https:") {
+      return new Response("Not found", { status: 404 });
+    }
+    if (url.pathname === MCP_PATH && await verifyBearerToken(request, env)) {
+      return handleMcp(request, env, ctx);
+    }
+    return oauthProvider.fetch(request, env, ctx);
   },
 };

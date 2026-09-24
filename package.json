@@ -10,6 +10,7 @@
     "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
+    "@cloudflare/workers-oauth-provider": "^1.0.0",
     "@modelcontextprotocol/server": "2.0.0",
     "agents": "latest",
     "telegram": "latest",

@@ -6,13 +6,15 @@ This directory also contains a Cloudflare Worker implementation of the read-only
 
 `https://verdian.io.kr/mcp/telegram`
 
-The Worker route is limited to this path and its children. The Worker itself accepts only the exact endpoint path. The apex DNS record must remain proxied by Cloudflare.
+The MCP endpoint accepts only the exact path. OAuth metadata and authorization endpoints also run on `verdian.io.kr`; the apex DNS record must remain proxied by Cloudflare.
 
 ## Authentication
 
-The Worker requires an `Authorization: Bearer <token>` header on every MCP request. It rejects requests when `MCP_AUTH_TOKEN` is missing, too short, or incorrect. No Cloudflare Access application is required.
+The Worker accepts either the owner bearer token for direct MCP clients or a scoped OAuth access token issued through its owner approval page. Unauthenticated MCP requests receive an OAuth resource metadata challenge. No Cloudflare Access application is required.
 
-Generate a random token locally and store it as the encrypted Worker secret `MCP_AUTH_TOKEN`. Keep the same value in a private, ignored local file for MCP client setup. Do not put it in `wrangler.jsonc`, source code, GitHub, or logs. Clients must support a custom Authorization header; clients that only support an interactive OAuth connection cannot use this endpoint as configured.
+Generate a random token locally and store it as the encrypted Worker secret `MCP_AUTH_TOKEN`. Keep the same value in the private, ignored local `.env` file. Do not put it in `wrangler.jsonc`, source code, GitHub, or logs. The OAuth approval page asks for this token to authorize a client to use read-only Telegram tools. The token is verified by the Worker and is not sent to the client.
+
+OAuth client registration, authorization, token exchange, and protected resource metadata are available at `/oauth/telegram/register`, `/oauth/telegram/authorize`, `/oauth/telegram/token`, and `/.well-known/oauth-protected-resource/mcp/telegram`. The provider stores client registrations and grants in the `OAUTH_KV` namespace. Access tokens last one hour and refresh tokens last 30 days. The only granted scope is `telegram:read`.
 
 Set these Worker secrets from the existing local `.env` without committing or printing their values:
 
@@ -36,7 +38,11 @@ npm run check
 npm run deploy
 ```
 
-Confirm the Cloudflare deployment, unauthenticated rejection, and a real authenticated MCP `tools/list` and read-only Telegram tool call at the custom URL. An HTTP status alone does not verify Telegram connectivity or MCP behavior.
+Confirm the Cloudflare deployment, unauthenticated OAuth challenge, OAuth authorization-code exchange, authenticated MCP `tools/list`, and a read-only Telegram tool call at the custom URL. An HTTP status alone does not verify Telegram connectivity or MCP behavior.
+
+## Connect to ChatGPT web
+
+Enable Developer mode under ChatGPT Settings > Security and login. Under Plugins, create a custom MCP plugin with server URL `https://verdian.io.kr/mcp/telegram` and OAuth authentication. ChatGPT discovers the OAuth endpoints from the Worker. When redirected to the Verdian approval page, enter the owner token from the local `.env` file yourself and approve read-only access. Check that ChatGPT lists the eight Telegram tools and can run a read-only tool before considering the connection complete. Do not paste `TG_SESSION_STRING` into ChatGPT.
 
 Telegram's API cannot combine message search with a forum topic reply filter. Topic search filters only that topic's latest 100 messages. Dialog title matching checks at most 500 dialogs per call.
 
