@@ -10,7 +10,7 @@ The Worker route is limited to this path and its children. The Worker itself acc
 
 ## Authentication
 
-Create a Cloudflare Access **MCP server application** protecting `verdian.io.kr/mcp/telegram`. Add a policy allowing only the owner's identity, enable **Managed OAuth**, and use a short access-token lifetime. The Worker independently verifies the `Cf-Access-Jwt-Assertion` signature, issuer, application audience, expiry, and owner email.
+Create a Cloudflare Access **self-hosted application** protecting `verdian.io.kr/mcp/telegram`. Add a policy allowing only the owner's identity, enable **Managed OAuth**, and use a short access-token lifetime. The Worker independently verifies the `Cf-Access-Jwt-Assertion` signature, issuer, application audience, expiry, and owner email.
 
 Set these non-secret Worker variables:
 
@@ -25,6 +25,8 @@ Set these Worker secrets from the existing local `.env` without committing or pr
 - `TG_SESSION_STRING`
 
 The `TG_SESSION_STRING` grants access to the Telegram account. The Worker has no message-sending tools, but anyone holding that string can use it independently. Never put it in source, GitHub Actions logs, or Wrangler config.
+
+`keep_vars` is enabled in `wrangler.jsonc` so GitHub-triggered deployments preserve the three non-secret variables managed in the Cloudflare dashboard. Encrypted secrets are preserved by Wrangler deployments.
 
 Disable the `workers.dev` route. The checked-in Wrangler config already requests this. The Worker also rejects any host other than `verdian.io.kr`.
 
