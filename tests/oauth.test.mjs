@@ -26,34 +26,35 @@ function env() {
 }
 
 function csrfFrom(html) {
-  return html.match(/name="csrf" value="([a-f0-9]+)"/)?.[1];
+  return html.match(/name="csrf" value="([a-f0-9.]+)"/)?.[1];
 }
 
-test("owner token and same-site CSRF are required before an OAuth grant", async () => {
+test("owner token and signed approval form are required without browser cookies", async () => {
   const state = env();
   const page = await authHandler.fetch(new Request(base), state);
   assert.equal(page.status, 200);
   const csrf = csrfFrom(await page.text());
-  assert.equal(csrf?.length, 64);
-  assert.match(page.headers.get("Set-Cookie"), new RegExp(`__Host-telegram-csrf=${csrf}`));
+  assert.match(csrf, /^\d{13}\.[a-f0-9]{64}\.[a-f0-9]{64}$/);
+  assert.equal(page.headers.get("Set-Cookie"), null);
   assert.equal(state.approved, 0);
 
-  async function submit(token, cookie) {
-    return authHandler.fetch(new Request(base, {
+  async function submit(token, proof = csrf, requestUrl = base) {
+    return authHandler.fetch(new Request(requestUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: cookie },
-      body: new URLSearchParams({ csrf, owner_token: token }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ csrf: proof, owner_token: token }),
     }), state);
   }
 
-  const expired = await submit(ownerToken, "");
+  const expired = await submit(ownerToken, "invalid");
   assert.equal(expired.status, 200);
   assert.match(await expired.text(), /승인 페이지가 만료되었습니다/);
-  assert.match(expired.headers.get("Set-Cookie"), /Max-Age=1800/);
+  const wrongRequest = await submit(ownerToken, csrf, `${base}&extra=1`);
+  assert.match(await wrongRequest.text(), /승인 페이지가 만료되었습니다/);
   assert.equal(state.approved, 0);
-  assert.equal((await submit("wrong", `__Host-telegram-csrf=${csrf}`)).status, 200);
+  assert.equal((await submit("wrong")).status, 200);
   assert.equal(state.approved, 0);
-  const approved = await submit(ownerToken, `__Host-telegram-csrf=${csrf}`);
+  const approved = await submit(ownerToken);
   assert.equal(approved.status, 302);
   assert.match(approved.headers.get("Location"), /^https:\/\/chatgpt\.com\/connector\/oauth\/callback/);
   assert.equal(state.approved, 1);

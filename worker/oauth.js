@@ -24,7 +24,7 @@ ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
 <p>토큰은 이 페이지에서만 확인하며 클라이언트에 전달되지 않습니다.</p></body></html>`;
 }
 
-function response(html, csrf) {
+function response(html) {
   return new Response(html, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
@@ -32,18 +32,39 @@ function response(html, csrf) {
       "Referrer-Policy": "no-referrer",
       "X-Content-Type-Options": "nosniff",
       "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
-      "Set-Cookie": `__Host-telegram-csrf=${csrf}; Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age=1800`,
     },
   });
 }
 
-function cookie(request, name) {
-  const match = request.headers.get("Cookie")?.match(new RegExp(`(?:^|;\\s*)${name}=([^;]*)`));
-  return match?.[1];
-}
-
 function randomToken() {
   return Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function formKey(env) {
+  if (!env.MCP_AUTH_TOKEN || env.MCP_AUTH_TOKEN.length < 32) throw new Error("Owner token is not configured");
+  return crypto.subtle.importKey("raw", new TextEncoder().encode(env.MCP_AUTH_TOKEN), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+}
+
+function signedMessage(issued, nonce, url) {
+  return new TextEncoder().encode(`${issued}.${nonce}.${url.search}`);
+}
+
+async function formProof(env, url) {
+  const issued = Date.now();
+  const nonce = randomToken();
+  const signature = await crypto.subtle.sign("HMAC", await formKey(env), signedMessage(issued, nonce, url));
+  const hex = Array.from(new Uint8Array(signature), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${issued}.${nonce}.${hex}`;
+}
+
+async function validFormProof(env, url, proof) {
+  if (typeof proof !== "string") return false;
+  const match = proof.match(/^(\d{13})\.([a-f0-9]{64})\.([a-f0-9]{64})$/);
+  if (!match) return false;
+  const issued = Number(match[1]);
+  if (issued > Date.now() + 60_000 || Date.now() - issued > 30 * 60_000) return false;
+  const signature = Uint8Array.from(match[3].match(/../g), (byte) => parseInt(byte, 16));
+  return crypto.subtle.verify("HMAC", await formKey(env), signature, signedMessage(match[1], match[2], url));
 }
 
 export const authHandler = {
@@ -70,8 +91,7 @@ export const authHandler = {
     if (!client || !oauthRequest.scope.includes(SCOPE)) return new Response("Invalid client or scope", { status: 400 });
     const clientName = client.clientName || client.clientId;
     if (request.method === "GET") {
-      const csrf = randomToken();
-      return response(page(clientName, csrf), csrf);
+      return response(page(clientName, await formProof(env, url)));
     }
 
     if (!request.headers.get("Content-Type")?.startsWith("application/x-www-form-urlencoded") ||
@@ -79,16 +99,13 @@ export const authHandler = {
       return new Response("Invalid form", { status: 400 });
     }
     const form = await request.formData();
-    const csrf = cookie(request, "__Host-telegram-csrf");
-    if (!csrf || form.get("csrf") !== csrf) {
-      const nextCsrf = randomToken();
-      return response(page(clientName, nextCsrf, "승인 페이지가 만료되었습니다. 토큰을 다시 입력해 주세요."), nextCsrf);
+    if (!(await validFormProof(env, url, form.get("csrf")))) {
+      return response(page(clientName, await formProof(env, url), "승인 페이지가 만료되었습니다. 토큰을 다시 입력해 주세요."));
     }
     const token = form.get("owner_token");
     const tokenRequest = new Request(RESOURCE, { headers: { Authorization: `Bearer ${typeof token === "string" ? token : ""}` } });
     if (!(await verifyBearerToken(tokenRequest, env))) {
-      const nextCsrf = randomToken();
-      return response(page(clientName, nextCsrf, "토큰이 올바르지 않습니다."), nextCsrf);
+      return response(page(clientName, await formProof(env, url), "토큰이 올바르지 않습니다."));
     }
 
     const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
@@ -102,7 +119,6 @@ export const authHandler = {
       status: 302,
       headers: {
         Location: redirectTo,
-        "Set-Cookie": "__Host-telegram-csrf=; Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age=0",
         "Cache-Control": "no-store",
         "Referrer-Policy": "no-referrer",
       },
