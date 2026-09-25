@@ -42,7 +42,9 @@ Confirm the Cloudflare deployment, unauthenticated OAuth challenge, OAuth author
 
 ## Connect to ChatGPT web
 
-Enable Developer mode under ChatGPT Settings > Security and login. Under Plugins, create a custom MCP plugin with server URL `https://verdian.io.kr/mcp/telegram` and OAuth authentication. ChatGPT discovers the OAuth endpoints from the Worker. When redirected to the Verdian approval page, enter the owner token from the local `.env` file yourself and approve read-only access. Check that ChatGPT lists the eight Telegram tools and can run a read-only tool before considering the connection complete. Do not paste `TG_SESSION_STRING` into ChatGPT.
+Enable Developer mode under ChatGPT Settings > Security and login. Under Plugins, create a custom MCP plugin with server URL `https://verdian.io.kr/mcp/telegram` and OAuth authentication. ChatGPT discovers the OAuth endpoints from the Worker. When redirected to the Verdian approval page, enter the owner token from the local `.env` file yourself and approve read-only access. Check that ChatGPT lists the nine Telegram tools and can run a read-only tool before considering the connection complete. Do not paste `TG_SESSION_STRING` into ChatGPT.
+
+For a large history, call `get_message_history` with a chat title or ID and optionally a forum topic. It returns up to 1,000 messages, with a response budget near 200 KB. If `has_more` is true, pass `next_before_message_id` as `before_message_id` in the next call. Repeat until `has_more` is false. The cursor is exclusive, so consecutive pages do not repeat the last message.
 
 Telegram's API cannot combine message search with a forum topic reply filter. Topic search filters only that topic's latest 100 messages. Dialog title matching checks at most 500 dialogs per call.
 

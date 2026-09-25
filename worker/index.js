@@ -6,6 +6,7 @@ import { verifyBearerToken } from "./auth.js";
 import { authHandler, AUTHORIZE_PATH, RESOURCE, SCOPE } from "./oauth.js";
 import {
   getChatInfo,
+  getMessageHistory,
   getMessagePhoto,
   getRecentMessages,
   listChatFolders,
@@ -71,6 +72,17 @@ function createServer(env) {
       topic: z.string().optional(),
     },
   }, async ({ chat, limit, topic }) => runTool(() => getRecentMessages(env, chat, limit, topic)));
+
+  server.registerTool("get_message_history", {
+    description: "Read a large Telegram chat or forum topic history in pages, newest first. Request up to 1000 messages per call; the response is capped near 200 KB. To continue without gaps, pass next_before_message_id as before_message_id until has_more is false.",
+    inputSchema: {
+      chat: z.string().min(1),
+      limit: z.number().int().min(1).max(1000).optional(),
+      topic: z.string().optional(),
+      before_message_id: z.number().int().positive().optional(),
+    },
+  }, async ({ chat, limit, topic, before_message_id }) =>
+    runTool(() => getMessageHistory(env, chat, limit, topic, before_message_id)));
 
   server.registerTool("search_messages", {
     description: "Search messages in a chat, or search the latest 100 messages in a forum topic for a keyword.",

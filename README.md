@@ -16,6 +16,7 @@ Cloudflare Workers 배포 및 `https://verdian.io.kr/mcp/telegram` 토큰 인증
 | `get_chat_info(chat)` | 특정 채팅의 기본 정보 |
 | `list_topics(chat)` | 채팅 내부의 포럼 토픽(주제별 하위방) 목록 |
 | `get_recent_messages(chat, limit?, topic?)` | 특정 채팅(또는 토픽)의 최신 메시지 N개 |
+| `get_message_history(chat, limit?, topic?, before_message_id?)` | 메시지를 최신순으로 최대 1,000개씩 조회. `has_more`가 참이면 반환된 `next_before_message_id`를 다음 호출의 `before_message_id`로 전달 |
 | `search_messages(chat, query, topic?, limit?)` | 특정 채팅(또는 토픽)에서 키워드로 메시지 검색 |
 | `get_message_photo(chat, message_id)` | 메시지에 첨부된 사진을 다운로드해서 이미지로 반환 |
 

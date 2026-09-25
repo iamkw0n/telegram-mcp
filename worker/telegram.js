@@ -1,5 +1,6 @@
 import { Api, TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions";
+import { collectHistoryPage } from "./history.js";
 
 let clientPromise;
 
@@ -157,19 +158,21 @@ export async function listTopics(env, chat) {
   }));
 }
 
+async function resolveTopicId(client, entity, topic) {
+  if (topic === undefined || topic === null || !String(topic).trim()) return undefined;
+  const topics = await forumTopics(client, entity);
+  const selected = /^\d+$/.test(String(topic))
+    ? topics.find((item) => item.id === Number(topic))
+    : findByName(topics, String(topic), (item) => item.title, "Topic");
+  if (!selected) throw new Error(`Topic not found: ${topic}`);
+  return selected.id;
+}
+
 export async function getRecentMessages(env, chat, limit = 10, topic) {
   const client = await telegramClient(env);
   const entity = await resolveChat(client, chat);
   const capped = Math.max(1, Math.min(100, Number(limit) || 10));
-  let replyTo;
-  if (topic !== undefined && topic !== null && String(topic).trim()) {
-    const topics = await forumTopics(client, entity);
-    const selected = /^\d+$/.test(String(topic))
-      ? topics.find((item) => item.id === Number(topic))
-      : findByName(topics, String(topic), (item) => item.title, "Topic");
-    if (!selected) throw new Error(`Topic not found: ${topic}`);
-    replyTo = selected.id;
-  }
+  const replyTo = await resolveTopicId(client, entity, topic);
   const messages = await client.getMessages(entity, { limit: capped, ...(replyTo ? { replyTo } : {}) });
   return messages.map(messageSummary);
 }
@@ -189,21 +192,26 @@ function messageSummary(message) {
   };
 }
 
+export async function getMessageHistory(env, chat, limit = 500, topic, beforeMessageId) {
+  const client = await telegramClient(env);
+  const entity = await resolveChat(client, chat);
+  const replyTo = await resolveTopicId(client, entity, topic);
+  const capped = Math.max(1, Math.min(1000, Number(limit) || 500));
+  const options = {
+    limit: capped + 1,
+    ...(replyTo ? { replyTo } : {}),
+    ...(beforeMessageId ? { offsetId: beforeMessageId } : {}),
+  };
+  return collectHistoryPage(client.iterMessages(entity, options), messageSummary, capped, beforeMessageId);
+}
+
 export async function searchMessages(env, chat, query, topic, limit = 20) {
   const client = await telegramClient(env);
   const entity = await resolveChat(client, chat);
   const needle = String(query).trim();
   if (!needle) throw new Error("Search query is required");
   const capped = Math.max(1, Math.min(100, Number(limit) || 20));
-  let replyTo;
-  if (topic !== undefined && topic !== null && String(topic).trim()) {
-    const topics = await forumTopics(client, entity);
-    const selected = /^\d+$/.test(String(topic))
-      ? topics.find((item) => item.id === Number(topic))
-      : findByName(topics, String(topic), (item) => item.title, "Topic");
-    if (!selected) throw new Error(`Topic not found: ${topic}`);
-    replyTo = selected.id;
-  }
+  const replyTo = await resolveTopicId(client, entity, topic);
   // Telegram does not combine server-side search with a reply thread filter.
   // For topics, inspect a bounded recent window and filter it locally.
   const messages = replyTo
