@@ -33,6 +33,7 @@ test("owner token and signed approval form are required without browser cookies"
   const state = env();
   const page = await authHandler.fetch(new Request(base), state);
   assert.equal(page.status, 200);
+  assert.match(page.headers.get("Content-Security-Policy"), /form-action 'self' https:\/\/chatgpt\.com;/);
   const csrf = csrfFrom(await page.text());
   assert.match(csrf, /^\d{13}\.[a-f0-9]{64}\.[a-f0-9]{64}$/);
   assert.equal(page.headers.get("Set-Cookie"), null);
